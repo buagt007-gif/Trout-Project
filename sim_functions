@@ -1,0 +1,242 @@
+import time
+import numpy as np
+import random
+
+# Uncomment when you want a fixed seed
+# random.seed(0)
+# np.random.seed(0)
+
+def update_trout(array, season_markers, hatching = 0.0, week = 0, weeks_to_hatch = 4,):
+
+    num_row, num_col = array.shape  # Initialize values for the number of rows and columns
+    water, trout = 0, 1             # Tie agent names to their number values
+
+    water_mask = (array == water)
+
+    array_updated = array.copy()    # Make a copy of the current array (will be changed and returned)
+    moved = np.zeros_like(array)    # Make a copy of the current array (used to prevent trout from double moving)
+
+    # Make list of neighbor offsets for Moore neighborhood of radius = 1
+    neighbors = [(dr,dc) for dr in range(-1,2) for dc in range(-1,2) if not (dr == 0 and dc == 0)]
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # TROUT DEATHS DUE TO OVERPOPULATION (Trout population adjusts as more trout get crowded by other trout)
+    # ------------------------------------------------------------------------------------------------------------------
+
+    for row in range(num_row):
+        for col in range(num_col):
+
+            # Skip over cells that do not have trout
+            if array_updated[row, col] != trout:
+                continue
+
+            # Initialize trout neighbor counts
+            trout_neighbor_count = 0
+
+            # Loop through neighboring cells in each direction (up, down, etc.)
+            for dr, dc in neighbors:
+                nr, nc = row + dr, col + dc
+
+                # Check if the neighboring cells are not out of bounds
+                if 0 <= nr < num_row and 0 <= nc < num_col:
+
+                    # If the neighboring cell contains trout, higher chance of current trout dying (becoming water)
+                    if array_updated[nr,nc] == trout:
+                        trout_neighbor_count += 1
+
+            # Trout die if their neighbor count is too high
+            # NOTE: As each trout is evaluated, the outcomes of the later trout are affected
+            if trout_neighbor_count > 3:
+                array_updated[row, col] = water
+
+    #--------------------------------------------------------------------------------------------------------------------------------------------
+    # NATURAL TROUT DEATHS AND BIRTHS (After overpopulation deaths occur, trouts will be born depending on the season and weeks it takes to hatch
+    #--------------------------------------------------------------------------------------------------------------------------------------------
+
+    for row in range(num_row):
+        for col in range(num_col):
+
+            # This is the "Spring" interval when trout will hatch at higher rates
+            if season_markers[0] <= week < season_markers[1] and week % weeks_to_hatch == 0:
+
+                if array_updated[row, col] == water and water_mask[row,col]:
+                    array_updated[row, col] = np.random.choice([water, trout], p=(1 - hatching, hatching))
+
+            # This is the "Summer" interval when trout will hatch at slightly lower rates
+            elif season_markers[1] <= week < season_markers[2] and week % (weeks_to_hatch*2) == 0:
+
+                if array_updated[row, col] == water and water_mask[row,col]:
+                    array_updated[row, col] = np.random.choice([water, trout], p=(1 - hatching/2, hatching/2))
+
+            # This is the "Fall" interval when trout will hatch at moderately lower rates
+            elif season_markers[2] <= week < season_markers[3] and week % (weeks_to_hatch*3) == 0:
+
+                if array_updated[row, col] == water and water_mask[row,col]:
+                    array_updated[row, col] = np.random.choice([water, trout], p=(1 - hatching/4, hatching/4))
+
+            # This is the "Winter" interval when trout will hatch at very low rates
+            elif season_markers[3] <= week < season_markers[4] and week % (weeks_to_hatch*4) == 0:
+
+                if array_updated[row, col] == water and water_mask[row,col]:
+                    array_updated[row, col] = np.random.choice([water, trout], p=((1 - hatching/8), hatching/8))
+
+    #-------------------------------------------------------------------------------------------------------------------
+    # TROUT MOVEMENT (After all state changes occur, trout are allowed to move to empty water cells)
+    #-------------------------------------------------------------------------------------------------------------------
+
+    for row in range(num_row):
+        for col in range(num_col):
+
+            # Skip over cells that do not have trout or that have trout that have moved already
+            if array_updated[row, col] != trout or moved[row, col] == trout:
+                continue
+
+            # Initialize an empty list for the places a trout can move
+            moves = []
+
+            # Loop through neighboring cells in each direction (up, down, etc.)
+            for dr, dc in neighbors:
+                nr, nc = row + dr, col + dc
+
+                # Check if the neighboring cell not out of bounds and contains water
+                if 0 <= nr < num_row and 0 <= nc < num_col:
+                    if array_updated[nr,nc] == water and  moved[nr,nc] == water:
+                        moves.append((nr, nc))
+
+            # Check if there are places to move
+            if moves:
+
+                # Pick a random new location from the valid moves
+                new_row, new_col = random.choice(moves)
+
+                # Update array with new trout location
+                array_updated[new_row, new_col] = trout
+                array_updated[row, col] = water
+
+                # Fill in both the new and old location w/ trout to prevent movement to unavailable cells
+                moved[new_row, new_col] = trout
+
+    return array_updated
+
+def update_fishermen(array, max_catches = 0.0):
+
+    num_row, num_col = array.shape  # Initialize values for the number of rows and columns
+    water, trout, fishermen = 0, 1, 3             # Tie agent names to their respective values
+
+    array_updated = array.copy()    # Make a copy of the current array (will be changed and returned)
+    moved = np.zeros_like(array)    # Make a copy of the current array to ensure no fishermen move to ineligible cells
+
+    # Makes list of neighbor offsets for Moore neighborhood with radius = 2
+    neighbors = [(dr,dc) for dr in range(-2,3) for dc in range(-2,3) if not (dr == 0 and dc == 0)]
+
+    # -------------------------------------------------------------------------------------------------------------------
+    # FISHERMEN SEASONAL CHANGES (The number of fishermen present in the iteration will be proportional to the trout)
+    # -------------------------------------------------------------------------------------------------------------------
+
+    # Count trout
+    trout_count = np.count_nonzero(array == trout)
+
+    # Target number of fishermen
+    min_fishers = int(trout_count * 0.1)
+    print(f'Min Fishers: {min_fishers}')
+    max_fishers = int(trout_count * 0.1)
+    print(f"Max Fishers: {max_fishers}")
+
+    # Locations eligible for fishermen (edges only)
+    edge_cells = [(r, c) for r in range(num_row) for c in range(num_col) if not (1 < r < num_row - 2 and 1 < c < num_col - 2)]
+
+    # Current fishermen positions
+    fisher_positions = [(r, c) for r, c in edge_cells if array_updated[r, c] == fishermen]
+    water_positions = [(r, c) for r, c in edge_cells if array_updated[r, c] == water]
+
+    # ADD fishermen if fewer than needed
+    while len(fisher_positions) < min_fishers and water_positions:
+        r,c = random.choice(water_positions)
+        water_positions.remove((r,c))
+        array_updated[r, c] = fishermen
+        fisher_positions.append((r, c))
+
+    # REMOVE fishermen if too many
+    while len(fisher_positions) > max_fishers:
+        r, c = random.choice(fisher_positions)
+        fisher_positions.remove((r,c))
+        array_updated[r, c] = water
+
+    # -------------------------------------------------------------------------------------------------------------------
+    # FISHERMEN CATCHING TROUT (The fishermen will catch trout in a Moore radius = 2 and will not catch more than the max
+    # -------------------------------------------------------------------------------------------------------------------
+
+    total_caught = 0
+
+    for row in range(num_row):
+        for col in range(num_col):
+
+            # Skip over cells that are not fishermen
+            if array_updated[row, col] != fishermen:
+                continue
+
+            # Initialize number of catchable trout
+            caught_trout = 0
+
+            # Initialize an empty list for the places a trout can move
+            places_to_catch = []
+
+            # Loop through neighboring cells in each direction (up, down, etc.)
+            for dr, dc in neighbors:
+                nr, nc = row + dr, col + dc
+
+                # Check if the neighboring cell not out of bounds and contains trout
+                if 0 <= nr < num_row and 0 <= nc < num_col:
+                    if array_updated[nr,nc] == trout:
+                        places_to_catch.append((nr, nc))
+
+            # Fishermen catch trout until they either reach the max amount or run out of trout to catch
+            while caught_trout < max_catches:
+
+                if len(places_to_catch) == 0:
+                    break
+
+                r, c = random.choice(places_to_catch)
+                array_updated[r,c] = water
+                caught_trout += 1
+                total_caught += 1
+
+    print(f"Total Trout Caught: {total_caught}")
+
+    #-------------------------------------------------------------------------------------------------------------------
+    # FISHERMEN MOVEMENT (After all state changes occur, fishermen are allowed to move to empty water cells)
+    #-------------------------------------------------------------------------------------------------------------------
+
+    for row in range(num_row):
+        for col in range(num_col):
+
+            # Skip over cells that do not have fishermen or that have fishermen that have moved already
+            if array_updated[row, col] != fishermen or moved[row, col] == fishermen:
+                continue
+
+            # Initialize an empty list for the places a trout can move
+            moves = []
+
+            # Loop through neighboring cells in each direction (up, down, etc.)
+            for dr, dc in neighbors:
+                nr, nc = row + dr, col + dc
+
+                # Check if the neighboring cell not out of bounds and contains water
+                if 0 <= nr < num_row and 0 <= nc < num_col and (nr,nc) in edge_cells:
+                    if array_updated[nr,nc] == water and  moved[nr,nc] == water:
+                        moves.append((nr, nc))
+
+            # Check if there are places to move
+            if moves:
+
+                # Pick a random new location from the valid moves
+                new_row, new_col = random.choice(moves)
+
+                # Update array with new trout location
+                array_updated[new_row, new_col] = fishermen
+                array_updated[row, col] = water
+
+                # Fill in both the new and old location w/ trout to prevent movement to unavailable cells
+                moved[new_row, new_col] = fishermen
+
+    return array_updated
