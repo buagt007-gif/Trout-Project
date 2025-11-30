@@ -1,0 +1,108 @@
+import random
+import time
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import colors
+from matplotlib.lines import lineStyles
+
+import sim_functions as sf
+
+# Uncomment when you want a fixed seed
+# np.random.seed(0)
+
+# Define global variables for each species
+water, trout, heron, fishermen = 0, 1, 2, 3
+
+# Function to plot the spatial distribution of the environment
+def plotSpatial(array, fileNumber, iteration):
+
+    cmap = colors.ListedColormap(['#ABD9FC',"#599041", "#000000", "#CC0000"])
+    bounds = [0,1,2,3,4]
+    norm = colors.BoundaryNorm(bounds, cmap.N)
+
+    plt.figure(figsize=(7, 6))
+    plt.pcolor(array, cmap=cmap, edgecolors='k', linewidths=1, norm=norm)
+    plt.title(f"Week {iteration}")
+
+    cbar = plt.colorbar(ticks=[0.5,1.5,2.5,3.5])
+    cbar.ax.set_yticklabels(['water','trout', 'herons', 'fishermen'])
+
+    plt.show()
+
+def create_agent_domain(Xsize: int, Ysize: int, deep_water_prob: list, shallow_water_prob: list):
+
+    # Generates initial deep water section of the domain containing water, trout, and heron
+    output_array = np.random.choice([water, trout, heron], size=(Xsize, Ysize), p=deep_water_prob)
+
+    # Generates shallow water section (edges) of the domain to include only water, trout, and fishermen
+    for row in range(Xsize):
+        for col in range(Ysize):
+            if not (0 < row < (Xsize - 1)) or not (0 < col < (Ysize - 1)):
+                output_array[row, col] = np.random.choice([water, trout, fishermen], p=shallow_water_prob)
+
+    return output_array
+
+#------------------[Experimental Stuff]-----------------------#
+
+def main():
+
+    sizeX, sizeY = 50, 50 # Define the size of the grid (30x30 cells)
+    shallow_water_prob = [.85,.1,.05] # Define the probabilities for water, trout, and fishermen to appear in shallow water
+    deep_water_prob = [.85,.15,.00] # Define the probabilities for water, trout, and herons to appear in deep water
+
+    # Set the number of iterations and markers for 4 capturing PNGs of the domain at equal intervals
+    max_iterations = 52
+    season_markers = np.linspace(1,max_iterations,5, dtype = int)
+
+    # Create and plot the initial state of the grid at time = 0
+    currTime = 0
+    simTime, water_pop, trout_pop, heron_pop, fishermen_pop = [],[],[],[],[]
+    domain = create_agent_domain(sizeX, sizeY, deep_water_prob, shallow_water_prob)  # Create the initial domain grid
+
+    # Plot the initial state at time = 0
+    plotSpatial(domain, currTime, 0)
+
+    print('-------------- End Iteration 0 ---------------------')
+
+    # Run iterations with updates to populations and interactions
+    for i in range(1, max_iterations+1):
+
+        # Update states of the trout and fishermen
+        domain = sf.update_trout(domain, hatching=0.05, weeks_to_hatch= 3, season_markers= season_markers, week= i)
+        domain = sf.update_fishermen(domain, max_catches= 4)
+
+        currTime += 1
+
+        # Track population changes for plotting
+        simTime.append(currTime)
+        water_pop.append(np.count_nonzero(domain == 0))  # Count cells with water
+        trout_pop.append(np.count_nonzero(domain == 1))  # Count cells with trout
+        heron_pop.append(np.count_nonzero(domain == 2))  # Count cells with herons
+        fishermen_pop.append(np.count_nonzero(domain == 3))
+
+        print(f"Trout Population: {trout_pop[i - 1]}")
+        print(f"Heron Population: {heron_pop[i - 1]}")
+        print(f"Fishermen Population {fishermen_pop[i - 1]}")
+
+        if i in season_markers:
+            plotSpatial(domain, currTime, i)
+
+
+        print(f"-------------- End Iteration {i} ---------------------")
+
+    # Plot the population of trout and fishermen over time
+    fig2 = plt.subplot()
+    fig2.plot(simTime,trout_pop, label= "Trout")
+    fig2.plot(simTime, fishermen_pop, label = "Fishermen")
+    fig2.legend()
+
+    fig2.set_xlabel("Time")
+    fig2.set_ylabel("Population")
+
+    # On the plot, show vertical lines to showcase the seasonal intervals
+    for season in season_markers:
+        fig2.axvline(x = season, ymin= 0, ymax= 1, ls = "--", c= "red", alpha = 0.3)
+
+    plt.show()
+
+main()
