@@ -2,11 +2,11 @@ import time
 import numpy as np
 import random
 
-# Uncomment when you want a fixed seed
+# Seeds for non-randomized runs
 # random.seed(0)
 # np.random.seed(0)
 
-def update_trout(array, season_markers, hatching = 0.0, week = 0, weeks_to_hatch = 4,):
+def update_trout(array, season_markers, hatching = 0.0, week = 0, weeks_to_hatch = 4, max_iterations = 0.0):
 
     num_row, num_col = array.shape  # Initialize values for the number of rows and columns
     water, trout = 0, 1             # Tie agent names to their number values
@@ -80,6 +80,30 @@ def update_trout(array, season_markers, hatching = 0.0, week = 0, weeks_to_hatch
                 if array_updated[row, col] == water and water_mask[row,col]:
                     array_updated[row, col] = np.random.choice([water, trout], p=((1 - hatching/8), hatching/8))
 
+            # This is the "Spring" interval when trout will hatch at higher rates
+            elif (season_markers[4] <= week < season_markers[5] and week % weeks_to_hatch == 0):
+
+                if array_updated[row, col] == water and water_mask[row,col]:
+                    array_updated[row, col] = np.random.choice([water, trout], p=(1 - hatching, hatching))
+
+            # This is the "Summer" interval when trout will hatch at slightly lower rates
+            elif season_markers[5] <= week < season_markers[6] and week % (weeks_to_hatch*2) == 0:
+
+                if array_updated[row, col] == water and water_mask[row,col]:
+                    array_updated[row, col] = np.random.choice([water, trout], p=(1 - hatching/2, hatching/2))
+
+            # This is the "Fall" interval when trout will hatch at moderately lower rates
+            elif season_markers[6] <= week < season_markers[7] and week % (weeks_to_hatch*3) == 0:
+
+                if array_updated[row, col] == water and water_mask[row,col]:
+                    array_updated[row, col] = np.random.choice([water, trout], p=(1 - hatching/4, hatching/4))
+
+            # This is the "Winter" interval when trout will hatch at very low rates
+            elif season_markers[7] <= week < season_markers[8] and week % (weeks_to_hatch*4) == 0:
+
+                if array_updated[row, col] == water and water_mask[row,col]:
+                    array_updated[row, col] = np.random.choice([water, trout], p=((1 - hatching/8), hatching/8))
+
     #-------------------------------------------------------------------------------------------------------------------
     # TROUT MOVEMENT (After all state changes occur, trout are allowed to move to empty water cells)
     #-------------------------------------------------------------------------------------------------------------------
@@ -139,7 +163,7 @@ def update_fishermen(array, max_catches = 0.0):
     # Target number of fishermen
     min_fishers = int(trout_count * 0.1)
     print(f'Min Fishers: {min_fishers}')
-    max_fishers = int(trout_count * 0.1)
+    max_fishers = int(trout_count * 0.15)
     print(f"Max Fishers: {max_fishers}")
 
     # Locations eligible for fishermen (edges only)
@@ -178,7 +202,12 @@ def update_fishermen(array, max_catches = 0.0):
             # Initialize number of catchable trout
             caught_trout = 0
 
-            # Initialize an empty list for the places a trout can move
+            #Initilizes a "skill category" for the fishermen and an empty list of their chances to catch a fish
+            fishermen_skill_category = random.randint(1, 3)
+            list_of_chances = []
+
+
+            # Initialize an empty list for the places a trout can be caught
             places_to_catch = []
 
             # Loop through neighboring cells in each direction (up, down, etc.)
@@ -196,8 +225,22 @@ def update_fishermen(array, max_catches = 0.0):
                 if len(places_to_catch) == 0:
                     break
 
+                elif fishermen_skill_category == 1:
+                    # list of percents on how likely the fishermen is to catch the trout!
+                    list_of_chances = [.05, .1, .2, .25]
+
+                elif fishermen_skill_category == 2:
+
+                    list_of_chances = [.3, .45, .6, .75]
+
+                elif fishermen_skill_category == 3:
+
+                    list_of_chances = [.8, .9, .95, 1]
+
+                fishermen_catch_chance = list_of_chances[random.randint(0, 3)]
+
                 r, c = random.choice(places_to_catch)
-                array_updated[r,c] = water
+                array_updated[r,c] = np.random.choice((water,trout), p = (fishermen_catch_chance, 1-fishermen_catch_chance))
                 caught_trout += 1
                 total_caught += 1
 
@@ -238,5 +281,118 @@ def update_fishermen(array, max_catches = 0.0):
 
                 # Fill in both the new and old location w/ trout to prevent movement to unavailable cells
                 moved[new_row, new_col] = fishermen
+
+    return array_updated
+
+def update_herons(array, hatching = 0.0):
+
+    total_trout_eaten = 0
+
+    num_row, num_col = array.shape  # Initialize values for the number of rows and columns
+    water, trout, heron = 0, 1, 2   # Tie agent names to their number values
+
+    array_updated = array.copy()    # Make a copy of the current array (will be changed and returned)
+    moved = np.zeros_like(array)    # Make a copy of the current array (used to prevent trout from double moving)
+
+    water_mask = (array == water)
+    has_eaten = np.zeros_like(array) # Make a copy of the current array (used to keep track of which herons have eaten)
+
+    # Make list of neighbor offsets for Moore neighborhood of radius = 1
+    neighbors = [(dr,dc) for dr in range(-2,3) for dc in range(-2,3) if not (dr == 0 and dc == 0)]
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # HERONS HUNTING TROUT (Each heron can prey on a single trout per iteration that is in their Moore neighborhood)
+    # ------------------------------------------------------------------------------------------------------------------
+
+    for row in range(num_row):
+        for col in range(num_col):
+
+            # Skip over cells that do not have herons
+            if array_updated[row, col] != heron or moved[row, col] == heron:
+                continue
+
+            # Initialize an empty list for the locations of nearby prey
+            prey_locations = []
+
+            # Loop through neighboring cells in each direction (up, down, etc.)
+            for dr, dc in neighbors:
+                nr, nc = row + dr, col + dc
+
+                # Check if the neighboring cell not out of bounds and contains trout
+                if 0 <= nr < num_row and 0 <= nc < num_col:
+                    if array_updated[nr,nc] == trout:
+                        prey_locations.append((nr, nc))
+
+            # Check if a heron has nearby prey
+            if prey_locations:
+
+                # Pick a random prey location from the valid locations
+                new_row, new_col = random.choice(prey_locations)
+
+                # Update array with new heron location (heron eats trout and moves to its location)
+                array_updated[new_row, new_col] = water
+                has_eaten[row, col] = True
+                total_trout_eaten +=1
+
+                # Fill in both the new and old location w/ heron to prevent movement to unavailable cells
+                moved[row, col] = heron
+
+    print(total_trout_eaten)
+
+    #--------------------------------------------------------------------------------------------------------------------------------------------
+    # NATURAL HERON DEATHS AND BIRTHS (After preying on trout, herons will be die depending on if they successfully preyed on a trout
+    #--------------------------------------------------------------------------------------------------------------------------------------------
+
+    for row in range(num_row):
+        for col in range(num_col):
+
+            if array_updated[row, col] != heron:
+                continue
+
+            if not has_eaten[row, col]:
+                array_updated[row,col] = water
+
+    for row in range(num_row):
+        for col in range(num_col):
+
+            if array_updated[row, col] == water and water_mask[row, col] :
+
+                array_updated[row,col] = np.random.choice(([water,heron]), p=(1 - hatching, hatching))
+
+    #-------------------------------------------------------------------------------------------------------------------
+    # HERON MOVEMENT (After all state changes occur, herons are allowed to move to empty water cells)
+    #-------------------------------------------------------------------------------------------------------------------
+
+    for row in range(num_row):
+        for col in range(num_col):
+
+            # Skip over cells that do not have herons or that have herons that have moved already
+            if array_updated[row, col] != heron or moved[row, col] == heron:
+                continue
+
+            # Initialize an empty list for the places a trout can move
+            moves = []
+
+            # Loop through neighboring cells in each direction (up, down, etc.)
+            for dr, dc in neighbors:
+                nr, nc = row + dr, col + dc
+
+                # Check if the neighboring cell not out of bounds and contains water
+                if 0 <= nr < num_row and 0 <= nc < num_col:
+                    if array_updated[nr,nc] == water and  moved[nr,nc] == water:
+                        moves.append((nr, nc))
+
+            # Check if there are places to move
+            if moves:
+
+                # Pick a random new location from the valid moves
+                new_row, new_col = random.choice(moves)
+
+                # Update array with new trout location
+                array_updated[new_row, new_col] = heron
+                array_updated[row, col] = water
+
+                # Fill in both the new and old location w/ trout to prevent movement to unavailable cells
+                moved[new_row, new_col] = heron
 
     return array_updated
