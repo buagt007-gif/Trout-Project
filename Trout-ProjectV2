@@ -3,12 +3,10 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colors
-from matplotlib.lines import lineStyles
 
-import sim_functions as sf
+import Simulation_FunctionsV2 as sf
 
-# Uncomment when you want a fixed seed
-# np.random.seed(0)
+np.random.seed(0)
 
 # Define global variables for each species
 water, trout, heron, fishermen = 0, 1, 2, 3
@@ -46,13 +44,13 @@ def create_agent_domain(Xsize: int, Ysize: int, deep_water_prob: list, shallow_w
 
 def main():
 
-    sizeX, sizeY = 50, 50 # Define the size of the grid (30x30 cells)
-    shallow_water_prob = [.85,.1,.05] # Define the probabilities for water, trout, and fishermen to appear in shallow water
-    deep_water_prob = [.85,.15,.00] # Define the probabilities for water, trout, and herons to appear in deep water
+    sizeX, sizeY = 30, 30 # Define the size of the grid (30x30 cells)
+    shallow_water_prob = [.85,.15,.0] # Define the probabilities for water, trout, and fishermen to appear in shallow water
+    deep_water_prob = [.85,.146,0.004] # Define the probabilities for water, trout, and herons to appear in deep water
 
     # Set the number of iterations and markers for 4 capturing PNGs of the domain at equal intervals
-    max_iterations = 52
-    season_markers = np.linspace(1,max_iterations,5, dtype = int)
+    max_iterations = 104
+    season_markers = np.linspace(1,max_iterations,9, dtype = int)
 
     # Create and plot the initial state of the grid at time = 0
     currTime = 0
@@ -68,8 +66,9 @@ def main():
     for i in range(1, max_iterations+1):
 
         # Update states of the trout and fishermen
-        domain = sf.update_trout(domain, hatching=0.05, weeks_to_hatch= 3, season_markers= season_markers, week= i)
+        domain = sf.update_trout(domain, hatching=0.05, weeks_to_hatch= 4, season_markers= season_markers, week= i)
         domain = sf.update_fishermen(domain, max_catches= 4)
+        domain = sf.update_herons(domain, hatching= 0.0004)
 
         currTime += 1
 
@@ -94,10 +93,11 @@ def main():
     fig2 = plt.subplot()
     fig2.plot(simTime,trout_pop, label= "Trout")
     fig2.plot(simTime, fishermen_pop, label = "Fishermen")
+    fig2.plot(simTime,heron_pop, label="Heron")
     fig2.legend()
 
-    fig2.set_xlabel("Time")
-    fig2.set_ylabel("Population")
+    fig2.set_xlabel("Weeks")
+    fig2.set_ylabel("Number of Individuals")
 
     # On the plot, show vertical lines to showcase the seasonal intervals
     for season in season_markers:
